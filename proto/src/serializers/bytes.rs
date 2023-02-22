@@ -54,8 +54,18 @@ pub mod base64string {
         D: Deserializer<'de>,
     {
         let s = Option::<String>::deserialize(deserializer)?.unwrap_or_default();
-        String::from_utf8(base64::decode(&s).map_err(serde::de::Error::custom)?)
-            .map_err(serde::de::Error::custom)
+        match String::from_utf8(base64::decode(&s).map_err(serde::de::Error::custom)?)
+            .map_err(serde::de::Error::custom) {
+            Ok(v) => Ok(v),
+            Err(e) => {
+                let msg = format!("{:?}",e);
+                if msg.contains("invalid utf-8 sequence of 1 bytes")  {
+                    Ok(s)
+                }else {
+                    Err(e)
+                }
+            }
+        }
     }
 
     /// Serialize from T into base64string
