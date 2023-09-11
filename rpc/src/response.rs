@@ -3,15 +3,37 @@
 use std::io::Read;
 
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde_json::Value;
 
-use crate::{response_error::ResponseError, Error, Id, Version};
+use crate::{Error, Id, response_error::ResponseError, Version};
+
+fn remove_bloom_field(json: &mut Value) -> Option<()> {
+    let mut end_block_events_value = json
+        .pointer_mut("/result/end_block_events")?
+        .take();
+    let end_block_events = end_block_events_value.as_array_mut()?;
+    end_block_events.retain(|element| {
+        if let Some(element_obj) = element.as_object() {
+            if let Some(value) = element_obj.get("type") {
+                if value == "block_bloom" {
+                    return false;
+                }
+            }
+        }
+        true
+    });
+    let result = json.pointer_mut("/result")?;
+    result["end_block_events"] = end_block_events_value.into();
+    Some(())
+}
 
 /// JSON-RPC responses
 pub trait Response: DeserializeOwned + Sized {
     /// Parse a JSON-RPC response from a JSON string
     fn from_string(response: impl AsRef<[u8]>) -> Result<Self, Error> {
-        let wrapper: Wrapper<Self> =
-            serde_json::from_slice(response.as_ref()).map_err(Error::serde)?;
+        let mut value: Value = serde_json::from_slice(response.as_ref()).map_err(Error::serde)?;
+        remove_bloom_field(&mut value);
+        let wrapper: Wrapper<Self> = serde_json::from_value(value).map_err(Error::serde)?;
         wrapper.into_result()
     }
 
